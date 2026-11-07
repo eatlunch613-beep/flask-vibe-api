@@ -5,6 +5,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify
+from sqlalchemy import text
 from werkzeug.exceptions import HTTPException
 
 from extensions import db
@@ -68,6 +69,31 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                 "time": datetime.now(timezone.utc).isoformat(),
             },
         )
+
+    @app.get("/api/health/db")
+    def health_db() -> tuple[Any, int]:
+        try:
+            db.session.execute(text("SELECT 1"))
+            return json_response(
+                200,
+                "資料庫連線正常。",
+                {
+                    "database": "postgresql",
+                    "status": "ok",
+                    "time": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+        except Exception:
+            app.logger.exception("Database health check failed")
+            return json_response(
+                500,
+                "資料庫連線異常。",
+                {
+                    "database": "postgresql",
+                    "status": "error",
+                    "time": datetime.now(timezone.utc).isoformat(),
+                },
+            )
 
     return app
 
