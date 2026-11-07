@@ -1,92 +1,78 @@
 from datetime import datetime, timezone
+import os
+from pathlib import Path
 from typing import Any
 
-from flask import Flask, jsonify, request
+from dotenv import load_dotenv
+from flask import Flask, jsonify
 from werkzeug.exceptions import HTTPException
 
-app = Flask(__name__)
-app.json.ensure_ascii = False
-
-tasks: list[dict[str, Any]] = [
-    {"id": 1, "title": "整理專案需求", "description": "確認 API 的功能與規格"},
-    {"id": 2, "title": "建立任務 API", "description": "實作任務清單與新增功能"},
-]
-next_task_id = max((task["id"] for task in tasks), default=0) + 1
+from extensions import db
 
 
-def json_response(
-    status: str, message: str, data: Any, http_status: int
-) -> tuple[Any, int]:
-    return jsonify(
-        {"status": status, "message": message, "data": data}
-    ), http_status
+def create_app(test_config: dict[str, Any] | None = None) -> Flask:
+    app = Flask(__name__)
+    app.json.ensure_ascii = False
+
+    env_path = Path(__file__).resolve().parent / ".env"
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path)
+
+    database_url = None
+    if test_config and "SQLALCHEMY_DATABASE_URI" in test_config:
+        database_url = test_config["SQLALCHEMY_DATABASE_URI"]
+    elif test_config and "DATABASE_URL" in test_config:
+        database_url = test_config["DATABASE_URL"]
+    else:
+        database_url = os.getenv("DATABASE_URL")
+
+    if not database_url or not database_url.strip():
+        raise RuntimeError("缺少環境變數 DATABASE_URL，請在環境變數或 .env 中設定 PostgreSQL 連線字串")
+
+    clean_url = database_url.strip()
+    if clean_url.startswith("postgres://"):
+        clean_url = clean_url.replace("postgres://", "postgresql://", 1)
+
+    app.config["SQLALCHEMY_DATABASE_URI"] = clean_url
+
+    if test_config:
+        app.config.update(test_config)
+
+    db.init_app(app)
+
+    def json_response(
+        code: int, message: str, data: Any = None
+    ) -> tuple[Any, int]:
+        return jsonify(
+            {"code": code, "message": message, "data": data}
+        ), code
+
+    @app.errorhandler(HTTPException)
+    def handle_http_exception(error: HTTPException) -> tuple[Any, int]:
+        http_status = error.code or 500
+        message = "找不到這一筆" if http_status == 404 else (error.description or "請求發生錯誤")
+        return json_response(http_status, message, None)
+
+    @app.errorhandler(Exception)
+    def handle_unexpected_exception(error: Exception) -> tuple[Any, int]:
+        app.logger.exception("Unhandled error while processing request")
+        return json_response(500, "伺服器發生未預期錯誤", None)
+
+    @app.get("/api/health")
+    def health() -> tuple[Any, int]:
+        return json_response(
+            200,
+            "伺服器運作正常，測試正常可以進行其他任務。",
+            {
+                "status": "ok",
+                "time": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+
+    return app
 
 
-@app.errorhandler(HTTPException)
-def handle_http_exception(error: HTTPException) -> tuple[Any, int]:
-    http_status = error.code or 500
-    message = "找不到此路徑" if http_status == 404 else error.description
-    return json_response("error", message, None, http_status)
-
-
-@app.errorhandler(Exception)
-def handle_unexpected_exception(error: Exception) -> tuple[Any, int]:
-    app.logger.exception("Unhandled error while processing request")
-    return json_response("error", "伺服器發生未預期錯誤", None, 500)
-
-
-@app.get("/api/health")
-def health() -> tuple[Any, int]:
-    return json_response(
-        "success",
-        "服務正常",
-        {
-            "status": "running",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        },
-        200,
-    )
-
-
-@app.get("/api/tasks")
-def get_tasks() -> tuple[Any, int]:
-    return json_response("success", "取得任務清單成功", tasks, 200)
-
-
-@app.post("/api/tasks")
-def create_task() -> tuple[Any, int]:
-    global next_task_id
-
-    payload = request.get_json(silent=True)
-    if not isinstance(payload, dict):
-        return json_response("error", "請提供合法的 JSON 物件", None, 400)
-
-    title = payload.get("title")
-    if not isinstance(title, str) or not title.strip():
-        return json_response("error", "必填欄位 title 不可為空", None, 400)
-
-    description = payload.get("description", "")
-    if not isinstance(description, str):
-        return json_response("error", "欄位 description 必須是字串", None, 400)
-
-    task = {
-        "id": next_task_id,
-        "title": title.strip(),
-        "description": description,
-    }
-    tasks.append(task)
-    next_task_id += 1
-
-    return json_response("success", "新增任務成功", task, 201)
-
-
-@app.get("/api/tasks/<int:task_id>")
-def get_task(task_id: int) -> tuple[Any, int]:
-    task = next((item for item in tasks if item["id"] == task_id), None)
-    if task is None:
-        return json_response("error", "找不到指定任務", None, 404)
-    return json_response("success", "取得任務成功", task, 200)
-
+app = create_app()
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=True)
