@@ -1850,6 +1850,148 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         }
         return json_response(200, "成功取得月度現金流摘要", data)
 
+    def serialize_transfer(tr: Transfer) -> dict[str, Any]:
+        return {
+            "id": tr.id,
+            "transferred_on": tr.transferred_on.isoformat() if tr.transferred_on else None,
+            "amount": float(tr.amount) if tr.amount is not None else 0.0,
+            "currency": tr.currency,
+            "fx_rate_to_twd": float(tr.fx_rate_to_twd) if tr.fx_rate_to_twd is not None else 1.0,
+            "from_account_id": tr.from_account_id,
+            "to_account_id": tr.to_account_id,
+            "note": tr.note,
+            "created_at": tr.created_at.isoformat() if tr.created_at else None,
+            "updated_at": tr.updated_at.isoformat() if tr.updated_at else None,
+        }
+
+    @app.post("/api/transfers")
+    def create_transfer() -> tuple[Any, int]:
+        body = request.get_json(silent=True) or {}
+
+        transferred_on_raw = body.get("transferred_on")
+        if not transferred_on_raw:
+            return json_response(400, "轉帳日期 (transferred_on) 為必填項目", None)
+        try:
+            transferred_on = date.fromisoformat(str(transferred_on_raw))
+        except ValueError:
+            return json_response(400, "轉帳日期格式不正確 (YYYY-MM-DD)", None)
+
+        amount_raw = body.get("amount")
+        if amount_raw is None:
+            return json_response(400, "轉帳金額 (amount) 為必填項目", None)
+        try:
+            amount = Decimal(str(amount_raw))
+            if amount <= 0:
+                raise ValueError()
+        except Exception:
+            return json_response(400, "轉帳金額必須大於 0", None)
+
+        currency = (body.get("currency") or "TWD").strip().upper()
+        if len(currency) != 3 or not currency.isalpha():
+            return json_response(400, "幣別 (currency) 必須為 3 碼英文字母", None)
+
+        fx_rate_raw = body.get("fx_rate_to_twd")
+        if fx_rate_raw is None:
+            if currency == "TWD":
+                fx_rate = Decimal("1.000000")
+            else:
+                return json_response(400, "外幣轉帳之換算匯率 (fx_rate_to_twd) 為必填項目", None)
+        else:
+            try:
+                fx_rate = Decimal(str(fx_rate_raw))
+                if fx_rate <= 0:
+                    raise ValueError()
+            except Exception:
+                return json_response(400, "換算匯率必須大於 0", None)
+
+        from_acc_raw = body.get("from_account_id")
+        if from_acc_raw is None:
+            return json_response(400, "轉出帳戶 (from_account_id) 為必填項目", None)
+        try:
+            from_account_id = int(from_acc_raw)
+        except (ValueError, TypeError):
+            return json_response(400, "轉出帳戶編號必須為整數", None)
+
+        to_acc_raw = body.get("to_account_id")
+        if to_acc_raw is None:
+            return json_response(400, "轉入帳戶 (to_account_id) 為必填項目", None)
+        try:
+            to_account_id = int(to_acc_raw)
+        except (ValueError, TypeError):
+            return json_response(400, "轉入帳戶編號必須為整數", None)
+
+        if from_account_id == to_account_id:
+            return json_response(400, "轉出帳戶與轉入帳戶不可相同", None)
+
+        from_acc = db.session.get(Account, from_account_id)
+        if not from_acc:
+            return json_response(400, "指名的轉出帳戶不存在", None)
+
+        to_acc = db.session.get(Account, to_account_id)
+        if not to_acc:
+            return json_response(400, "指名的轉入帳戶不存在", None)
+
+        raw_note = body.get("note")
+        note = raw_note.strip() if isinstance(raw_note, str) and raw_note.strip() else None
+
+        transfer = Transfer(
+            transferred_on=transferred_on,
+            amount=amount,
+            currency=currency,
+            fx_rate_to_twd=fx_rate,
+            from_account_id=from_account_id,
+            to_account_id=to_account_id,
+            note=note,
+        )
+        db.session.add(transfer)
+        db.session.commit()
+
+        return json_response(201, "轉帳建立成功", serialize_transfer(transfer))
+
+    @app.get("/api/transfers")
+    def list_transfers() -> tuple[Any, int]:
+        query = Transfer.query
+
+        from_acc_param = request.args.get("from_account_id")
+        if from_acc_param:
+            try:
+                query = query.filter(Transfer.from_account_id == int(from_acc_param))
+            except (ValueError, TypeError):
+                return json_response(400, "轉出帳戶編號必須為整數", None)
+
+        to_acc_param = request.args.get("to_account_id")
+        if to_acc_param:
+            try:
+                query = query.filter(Transfer.to_account_id == int(to_acc_param))
+            except (ValueError, TypeError):
+                return json_response(400, "轉入帳戶編號必須為整數", None)
+
+        date_from_param = request.args.get("date_from")
+        if date_from_param:
+            try:
+                parsed_from = date.fromisoformat(date_from_param)
+                query = query.filter(Transfer.transferred_on >= parsed_from)
+            except ValueError:
+                return json_response(400, "起始日期格式不正確 (YYYY-MM-DD)", None)
+
+        date_to_param = request.args.get("date_to")
+        if date_to_param:
+            try:
+                parsed_to = date.fromisoformat(date_to_param)
+                query = query.filter(Transfer.transferred_on <= parsed_to)
+            except ValueError:
+                return json_response(400, "結束日期格式不正確 (YYYY-MM-DD)", None)
+
+        transfers = query.order_by(Transfer.transferred_on.desc(), Transfer.id.desc()).all()
+        return json_response(200, "成功取得轉帳清單", [serialize_transfer(t) for t in transfers])
+
+    @app.get("/api/transfers/<int:transfer_id>")
+    def get_transfer(transfer_id: int) -> tuple[Any, int]:
+        tr = db.session.get(Transfer, transfer_id)
+        if not tr:
+            return json_response(404, "找不到這一筆", None)
+        return json_response(200, "成功取得轉帳資料", serialize_transfer(tr))
+
     return app
 
 
