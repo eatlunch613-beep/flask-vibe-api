@@ -11,6 +11,10 @@ __all__ = [
     "InvoiceItem",
     "DrawPeriod",
     "DrawPrize",
+    "ExpenseCategory",
+    "Expense",
+    "Instrument",
+    "Trade",
 ]
 
 
@@ -172,6 +176,12 @@ class Income(db.Model):
         nullable=True,
         unique=True,
     )
+    trade_id = db.Column(
+        db.BigInteger,
+        ForeignKey("trades.id", ondelete="RESTRICT"),
+        nullable=True,
+        unique=True,
+    )
     created_at = db.Column(
         db.DateTime(timezone=True),
         nullable=False,
@@ -197,7 +207,12 @@ class Income(db.Model):
     invoice = db.relationship(
         "Invoice",
         foreign_keys=[invoice_id],
-        backref=db.backref("income", uselist=False),
+        backref=db.backref("income", uselist=False, passive_deletes=True),
+    )
+    trade = db.relationship(
+        "Trade",
+        foreign_keys=[trade_id],
+        backref=db.backref("income", uselist=False, passive_deletes=True),
     )
 
 
@@ -362,4 +377,193 @@ class DrawPrize(db.Model):
         "DrawPeriod",
         foreign_keys=[draw_period_id],
         backref=db.backref("prizes", lazy="dynamic", cascade="all, delete-orphan", passive_deletes=True),
+    )
+
+
+class ExpenseCategory(db.Model):
+    __tablename__ = "expense_categories"
+
+    id = db.Column(db.BigInteger, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(50), nullable=False, unique=True)
+    description = db.Column(db.Text, nullable=True)
+    created_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        server_default=text("timezone('utc', now())"),
+    )
+    updated_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        server_default=text("timezone('utc', now())"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class Expense(db.Model):
+    __tablename__ = "expenses"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="chk_expenses_amount_positive"),
+        CheckConstraint("fx_rate_to_twd > 0", name="chk_expenses_fx_rate_positive"),
+        CheckConstraint(
+            "currency ~ '^[A-Z]{3}$'",
+            name="chk_expenses_currency",
+        ),
+        CheckConstraint(
+            "COALESCE(TRIM(merchant), '') <> '' OR COALESCE(TRIM(note), '') <> ''",
+            name="chk_expenses_merchant_or_note_not_empty",
+        ),
+    )
+
+    id = db.Column(db.BigInteger, primary_key=True, autoincrement=True)
+    spent_on = db.Column(db.Date, nullable=False)
+    settled_on = db.Column(db.Date, nullable=True)
+    amount = db.Column(db.Numeric(16, 2), nullable=False)
+    currency = db.Column(db.String(3), nullable=False)
+    fx_rate_to_twd = db.Column(db.Numeric(12, 6), nullable=False)
+    category_id = db.Column(
+        db.BigInteger,
+        ForeignKey("expense_categories.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    account_id = db.Column(
+        db.BigInteger,
+        ForeignKey("accounts.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    merchant = db.Column(db.String(100), nullable=True)
+    note = db.Column(db.Text, nullable=True)
+    invoice_id = db.Column(
+        db.BigInteger,
+        ForeignKey("invoices.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    created_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        server_default=text("timezone('utc', now())"),
+    )
+    updated_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        server_default=text("timezone('utc', now())"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    category = db.relationship(
+        "ExpenseCategory",
+        foreign_keys=[category_id],
+        backref=db.backref("expenses", lazy="dynamic"),
+    )
+    account = db.relationship(
+        "Account",
+        foreign_keys=[account_id],
+        backref=db.backref("expenses", lazy="dynamic"),
+    )
+    invoice = db.relationship(
+        "Invoice",
+        foreign_keys=[invoice_id],
+        backref=db.backref("expenses", lazy="dynamic", passive_deletes=True),
+    )
+
+
+class Instrument(db.Model):
+    __tablename__ = "instruments"
+    __table_args__ = (
+        CheckConstraint(
+            "market IN ('tw_stock', 'us_stock', 'fund', 'other')",
+            name="chk_instruments_market",
+        ),
+        CheckConstraint(
+            "currency ~ '^[A-Z]{3}$'",
+            name="chk_instruments_currency",
+        ),
+        UniqueConstraint(
+            "market",
+            "symbol",
+            name="uq_instruments_market_symbol",
+        ),
+    )
+
+    id = db.Column(db.BigInteger, primary_key=True, autoincrement=True)
+    market = db.Column(db.String(20), nullable=False)
+    symbol = db.Column(db.String(20), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    currency = db.Column(db.String(3), nullable=False)
+    created_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        server_default=text("timezone('utc', now())"),
+    )
+    updated_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        server_default=text("timezone('utc', now())"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class Trade(db.Model):
+    __tablename__ = "trades"
+    __table_args__ = (
+        CheckConstraint(
+            "trade_type IN ('buy', 'sell', 'cash_dividend', 'stock_dividend', 'drip', 'split', 'merge', 'capital_reduction')",
+            name="chk_trades_trade_type",
+        ),
+        CheckConstraint(
+            "(fee IS NULL OR fee >= 0) AND (tax IS NULL OR tax >= 0)",
+            name="chk_trades_fee_tax_non_negative",
+        ),
+        CheckConstraint(
+            "currency ~ '^[A-Z]{3}$'",
+            name="chk_trades_currency",
+        ),
+        CheckConstraint(
+            "fx_rate_to_twd > 0",
+            name="chk_trades_fx_rate_positive",
+        ),
+    )
+
+    id = db.Column(db.BigInteger, primary_key=True, autoincrement=True)
+    instrument_id = db.Column(
+        db.BigInteger,
+        ForeignKey("instruments.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    account_id = db.Column(
+        db.BigInteger,
+        ForeignKey("accounts.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    trade_type = db.Column(db.String(30), nullable=False)
+    traded_on = db.Column(db.Date, nullable=False)
+    quantity = db.Column(db.Numeric(16, 4), nullable=True)
+    price = db.Column(db.Numeric(16, 4), nullable=True)
+    cash_amount = db.Column(db.Numeric(16, 2), nullable=True)
+    ratio = db.Column(db.Numeric(16, 6), nullable=True)
+    fee = db.Column(db.Numeric(12, 2), nullable=True)
+    tax = db.Column(db.Numeric(12, 2), nullable=True)
+    currency = db.Column(db.String(3), nullable=False)
+    fx_rate_to_twd = db.Column(db.Numeric(12, 6), nullable=False)
+    voided_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    created_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        server_default=text("timezone('utc', now())"),
+    )
+    updated_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        server_default=text("timezone('utc', now())"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    instrument = db.relationship(
+        "Instrument",
+        foreign_keys=[instrument_id],
+        backref=db.backref("trades", lazy="dynamic"),
+    )
+    account = db.relationship(
+        "Account",
+        foreign_keys=[account_id],
+        backref=db.backref("trades", lazy="dynamic"),
     )
