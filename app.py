@@ -57,6 +57,59 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 
     db.init_app(app)
 
+    def is_allowed_origin(origin: str | None) -> bool:
+        if not origin:
+            return False
+        if re.match(r"^https?://(127\.0\.0\.1|localhost)(:\d+)?$", origin.strip()):
+            return True
+        web_origin = os.getenv("WEB_ORIGIN")
+        if web_origin and web_origin.strip():
+            allowed = [o.strip().rstrip("/") for o in web_origin.split(",") if o.strip()]
+            if origin.strip().rstrip("/") in allowed:
+                return True
+        return False
+
+    @app.before_request
+    def handle_options_preflight():
+        if request.method == "OPTIONS":
+            origin = request.headers.get("Origin")
+            response = app.make_default_options_response()
+            if is_allowed_origin(origin):
+                response.headers["Access-Control-Allow-Origin"] = origin
+                response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+                req_headers = request.headers.get("Access-Control-Request-Headers")
+                if req_headers:
+                    response.headers["Access-Control-Allow-Headers"] = req_headers
+                else:
+                    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+                response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Allow-Private-Network"] = "true"
+            response.headers["Vary"] = "Origin"
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+            return response
+
+    @app.after_request
+    def add_cors_headers(response):
+        origin = request.headers.get("Origin")
+        if is_allowed_origin(origin):
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            req_headers = request.headers.get("Access-Control-Request-Headers")
+            if req_headers:
+                response.headers["Access-Control-Allow-Headers"] = req_headers
+            else:
+                response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Private-Network"] = "true"
+        vary = response.headers.get("Vary")
+        if vary:
+            if "Origin" not in vary:
+                response.headers["Vary"] = f"{vary}, Origin"
+        else:
+            response.headers["Vary"] = "Origin"
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        return response
+
     def json_response(
         code: int, message: str, data: Any = None
     ) -> tuple[Any, int]:

@@ -1,0 +1,820 @@
+/* 個人記帳本 (Mobile-first CSS) */
+
+:root {
+  --color-bg: #f7f6f3;
+  --color-card: #ffffff;
+  --color-primary: #0d5c58;
+  --color-primary-hover: #084744;
+  --color-primary-light: #e6f4f2;
+  --color-text-main: #1f2937;
+  --color-text-muted: #6b7280;
+  --color-border: #e5e7eb;
+  --color-border-focus: #0d5c58;
+  --color-income: #15803d;
+  --color-expense: #b91c1c;
+  --color-badge-bg: #f3f4f6;
+  --color-danger: #dc2626;
+  --radius-card: 14px;
+  --radius-input: 10px;
+  --radius-btn: 10px;
+  --shadow-card: 0 2px 10px rgba(0, 0, 0, 0.05);
+  --shadow-nav: 0 -2px 12px rgba(0, 0, 0, 0.06);
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  width: 100%;
+  min-height: 100%;
+  background-color: var(--color-bg);
+  color: var(--color-text-main);
+  font-family: var(--font-family);
+  font-size: 16px;
+  line-height: 1.5;
+  overflow-x: hidden;
+}
+
+/* 主容器：行動裝置預設滿版，桌機平板收窄並水平置中 */
+.app-container {
+  width: 100%;
+  max-width: 100%;
+  min-height: 100vh;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  background-color: var(--color-bg);
+}
+
+@media (min-width: 768px) {
+  .app-container {
+    max-width: 430px;
+    box-shadow: 0 0 24px rgba(0, 0, 0, 0.08);
+  }
+}
+
+/* 頂端導航條 */
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background-color: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--color-border);
+  padding: 12px 16px;
+  min-height: 56px;
+}
+
+.header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.header-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.header-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background-color: var(--color-badge-bg);
+  color: var(--color-text-muted);
+}
+
+/* 訊息提示條 (Toast) */
+.toast {
+  position: fixed;
+  top: 68px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 32px);
+  max-width: 400px;
+  z-index: 100;
+  background-color: #1f2937;
+  color: #ffffff;
+  padding: 12px 16px;
+  border-radius: var(--radius-card);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.9rem;
+  animation: slideDown 0.25s ease-out;
+}
+
+.toast.toast-error {
+  background-color: #b91c1c;
+}
+
+.toast.toast-success {
+  background-color: var(--color-primary);
+}
+
+.toast-message {
+  flex: 1;
+  word-break: break-word;
+}
+
+.toast-close {
+  background: none;
+  border: none;
+  color: #ffffff;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px;
+  min-width: 32px;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -10px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* 主內容區 */
+.app-main {
+  flex: 1;
+  padding: 16px 16px calc(72px + env(safe-area-inset-bottom, 16px));
+}
+
+/* 卡片與元件樣式 */
+.card {
+  background-color: var(--color-card);
+  border-radius: var(--radius-card);
+  padding: 18px 16px;
+  box-shadow: var(--shadow-card);
+  border: 1px solid var(--color-border);
+  margin-bottom: 16px;
+}
+
+.card-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--color-text-main);
+  margin-bottom: 4px;
+}
+
+.card-desc {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  margin-bottom: 16px;
+}
+
+/* 按鈕樣式 (點擊目標至少 44px) */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  font-weight: 600;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 16px;
+  border-radius: var(--radius-btn);
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.15s ease, opacity 0.15s ease, transform 0.05s ease;
+  user-select: none;
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
+
+.btn-primary {
+  background-color: var(--color-primary);
+  color: #ffffff;
+}
+
+.btn-primary:hover {
+  background-color: var(--color-primary-hover);
+}
+
+.btn-secondary {
+  background-color: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+.btn-secondary:hover {
+  background-color: #d1ece8;
+}
+
+.btn-outline-sm {
+  background: transparent;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  font-size: 0.825rem;
+  min-height: 36px;
+  padding: 0 12px;
+}
+
+.btn-outline-sm:hover {
+  background-color: #f3f4f6;
+  color: var(--color-text-main);
+}
+
+.btn-block {
+  width: 100%;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 表單控制項 (點擊目標至少 44px) */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.form-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-main);
+  margin-bottom: 4px;
+}
+
+.form-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  font-size: 1rem;
+  color: var(--color-text-main);
+  background-color: #fafafa;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-input);
+  outline: none;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.form-input:focus {
+  border-color: var(--color-border-focus);
+  background-color: #ffffff;
+  box-shadow: 0 0 0 2px rgba(13, 92, 88, 0.15);
+}
+
+.form-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%236b7280'%3e%3cpath fill-rule='evenodd' d='M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z' clip-rule='evenodd'/%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 18px 18px;
+  padding-right: 36px;
+}
+
+.form-help {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.form-row {
+  display: flex;
+  gap: 12px;
+}
+
+.form-col {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 等寬數字與金額樣式 */
+.amount-text, .amount-input, .summary-amount {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+.amount-input {
+  text-align: right;
+  font-weight: 600;
+}
+
+.amount-positive {
+  color: var(--color-income);
+}
+
+.amount-negative {
+  color: var(--color-expense);
+}
+
+/* 連線頁 */
+.connection-card {
+  text-align: center;
+  padding: 32px 20px;
+  margin-top: 24px;
+}
+
+.connection-icon {
+  font-size: 3rem;
+  margin-bottom: 12px;
+}
+
+/* 標題與區塊頭部 */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 20px 0 10px;
+}
+
+.section-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text-main);
+}
+
+/* 本月生活現金流卡片 */
+.summary-card {
+  background: linear-gradient(145deg, #ffffff, #fcfcfb);
+}
+
+.summary-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.summary-tag {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  background-color: var(--color-primary-light);
+  padding: 3px 8px;
+  border-radius: 20px;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.summary-item {
+  padding: 12px;
+  border-radius: 10px;
+  background-color: #fafafa;
+  border: 1px solid #f0f0f0;
+}
+
+.summary-item.income {
+  border-left: 3px solid var(--color-income);
+}
+
+.summary-item.expense {
+  border-left: 3px solid var(--color-expense);
+}
+
+.summary-label {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin-bottom: 4px;
+}
+
+.summary-amount {
+  font-size: 1.15rem;
+  font-weight: 700;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 帳戶卡片列表 */
+.accounts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.account-card {
+  background-color: var(--color-card);
+  border-radius: var(--radius-card);
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-shadow: var(--shadow-card);
+}
+
+.account-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.account-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--color-text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.account-kind {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+.account-balance-box {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.account-twd-balance {
+  font-size: 1.05rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
+}
+
+.account-orig-balance {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 空白與警告提示盒 */
+.empty-card {
+  text-align: center;
+  padding: 24px 16px;
+}
+
+.empty-icon {
+  font-size: 2.2rem;
+  margin-bottom: 8px;
+}
+
+.empty-title {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.empty-desc {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  margin-bottom: 14px;
+}
+
+.quick-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.alert-box {
+  background-color: #fefce8;
+  border: 1px solid #fef08a;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  font-size: 0.85rem;
+  color: #854d0e;
+}
+
+.quick-inline-group {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.quick-inline-group .form-input {
+  min-height: 40px;
+  font-size: 0.9rem;
+}
+
+.quick-inline-group .btn {
+  min-height: 40px;
+  flex-shrink: 0;
+  font-size: 0.85rem;
+}
+
+/* 分頁切換器 (Tab Switcher) */
+.tab-switcher {
+  display: flex;
+  background-color: #e9ecef;
+  border-radius: 12px;
+  padding: 4px;
+  margin-bottom: 16px;
+}
+
+.tab-btn {
+  flex: 1;
+  min-height: 40px;
+  border: none;
+  background: transparent;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  border-radius: 9px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tab-btn.active {
+  background-color: #ffffff;
+  color: var(--color-primary);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+/* 明細列表 (入帳與花費歷史清單) */
+.records-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.record-item {
+  background-color: var(--color-card);
+  border-radius: var(--radius-card);
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+}
+
+.record-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.record-title {
+  font-size: 0.925rem;
+  font-weight: 600;
+  color: var(--color-text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.record-meta {
+  font-size: 0.775rem;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+  display: flex;
+  gap: 8px;
+}
+
+.record-amount {
+  font-size: 1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* 投資頁樣式 */
+.action-card {
+  padding: 16px;
+}
+
+.action-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fetch-status-text {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background-color: var(--color-primary-light);
+  color: var(--color-primary);
+  font-size: 0.85rem;
+}
+
+.investments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.instrument-card {
+  background-color: var(--color-card);
+  border-radius: var(--radius-card);
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-card);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.instrument-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.instrument-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.instrument-symbol {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+}
+
+.instrument-numbers {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.instrument-quote {
+  font-size: 1.05rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
+}
+
+.instrument-holding {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 發票頁樣式 */
+.invoices-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.invoice-card {
+  background-color: var(--color-card);
+  border-radius: var(--radius-card);
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+}
+
+.invoice-number {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 1rem;
+  letter-spacing: 0.5px;
+}
+
+.invoice-date {
+  font-size: 0.775rem;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+.invoice-right {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.invoice-amount {
+  font-size: 1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.invoice-status-badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 6px;
+  margin-top: 2px;
+}
+
+.status-unchecked {
+  background-color: #f3f4f6;
+  color: #4b5563;
+}
+
+.status-won {
+  background-color: #dcfce7;
+  color: #15803d;
+}
+
+.status-claimed {
+  background-color: #e0f2fe;
+  color: #0369a1;
+}
+
+.status-lost {
+  background-color: #fef2f2;
+  color: #991b1b;
+}
+
+.status-void {
+  background-color: #fee2e2;
+  color: #b91c1c;
+  text-decoration: line-through;
+}
+
+/* 底部導覽欄 (Bottom Navigation Bar) */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background-color: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  min-height: 56px;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  box-shadow: var(--shadow-nav);
+}
+
+@media (min-width: 768px) {
+  .bottom-nav {
+    left: 50%;
+    transform: translateX(-50%);
+    width: 430px;
+    max-width: 430px;
+  }
+}
+
+.nav-item {
+  flex: 1;
+  min-height: 48px;
+  background: none;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: 4px 0;
+  transition: color 0.15s ease;
+}
+
+.nav-icon {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.nav-label {
+  font-size: 0.725rem;
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+.nav-item.active {
+  color: var(--color-primary);
+}
+
+/* 載入與輔助狀態 */
+.loading-state, .empty-state {
+  text-align: center;
+  padding: 30px 16px;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+.hidden {
+  display: none !important;
+}
