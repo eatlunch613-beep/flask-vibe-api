@@ -3,6 +3,7 @@ from datetime import date, datetime, timezone
 import os
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from decimal import Decimal
 from dotenv import load_dotenv
@@ -34,6 +35,8 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     env_path = Path(__file__).resolve().parent / ".env"
     if env_path.exists():
         load_dotenv(dotenv_path=env_path)
+    else:
+        load_dotenv()
 
     database_url = None
     if test_config and "SQLALCHEMY_DATABASE_URI" in test_config:
@@ -60,13 +63,95 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     def is_allowed_origin(origin: str | None) -> bool:
         if not origin:
             return False
-        if re.match(r"^https?://(127\.0\.0\.1|localhost)(:\d+)?$", origin.strip()):
+
+        clean_origin = origin.strip().rstrip("/")
+        if not clean_origin:
+            return False
+
+        # 1. 允許本地開發環境 (localhost, 127.x.x.x, 0.0.0.0，支援任意連接埠)
+        if re.match(
+            r"^https?://(localhost|127(\.\d+){3}|0\.0\.0\.0)(:\d+)?$",
+            clean_origin,
+            re.IGNORECASE,
+        ):
             return True
+
+        # 2. 允許所有 GitHub Pages 來源 (包含 https://*.github.io 與 https://github.io)
+        if re.match(
+            r"^https?://([a-zA-Z0-9-]+\.)*github\.io(:\d+)?$",
+            clean_origin,
+            re.IGNORECASE,
+        ):
+            return True
+
+        # 若 origin 為純網域型態 (如 eatlunch613.github.io 或 github.io)
+        if clean_origin.lower() == "github.io" or clean_origin.lower().endswith(".github.io"):
+            return True
+
+        # 3. 解析當前 origin 的 host、scheme 與 port
+        try:
+            parsed_origin = urlparse(
+                clean_origin if "://" in clean_origin else f"https://{clean_origin}"
+            )
+            origin_host = (parsed_origin.hostname or "").lower()
+            origin_scheme = (parsed_origin.scheme or "").lower()
+            origin_port = parsed_origin.port
+        except Exception:
+            origin_host = ""
+            origin_scheme = ""
+            origin_port = None
+
+        # 4. 讀取並檢驗環境變數 WEB_ORIGIN
         web_origin = os.getenv("WEB_ORIGIN")
         if web_origin and web_origin.strip():
-            allowed = [o.strip().rstrip("/") for o in web_origin.split(",") if o.strip()]
-            if origin.strip().rstrip("/") in allowed:
-                return True
+            # 支援以逗號、分號、換行或空白分隔多個允許網域
+            entries = [
+                e.strip().rstrip("/")
+                for e in re.split(r"[,;\r\n]+", web_origin)
+                if e.strip()
+            ]
+
+            for entry in entries:
+                if entry == "*":
+                    return True
+
+                # 完全相符比對
+                if clean_origin.lower() == entry.lower():
+                    return True
+
+                # 解析 entry
+                try:
+                    parsed_entry = urlparse(
+                        entry if "://" in entry else f"https://{entry}"
+                    )
+                    entry_host = (parsed_entry.hostname or "").lower()
+                    entry_scheme = parsed_entry.scheme.lower() if "://" in entry else None
+                    entry_port = parsed_entry.port
+                except Exception:
+                    entry_host = entry.lower()
+                    entry_scheme = None
+                    entry_port = None
+
+                # 比對去除路徑後的 netloc origin (例如 entry 填入完整頁面路徑 https://user.github.io/repo)
+                if entry_host and entry_scheme:
+                    entry_origin = f"{entry_scheme}://{parsed_entry.netloc}".lower().rstrip("/")
+                    if clean_origin.lower() == entry_origin:
+                        return True
+
+                # 比對網域名稱或萬用字元 (如 github.io, *.github.io, custom.com)
+                if entry_host:
+                    clean_pattern_host = entry_host.lstrip("*.")
+                    if origin_host == clean_pattern_host or origin_host.endswith("." + clean_pattern_host):
+                        if entry_scheme is None or entry_scheme == origin_scheme:
+                            if entry_port is None or entry_port == origin_port:
+                                return True
+
+                # 比對本機 IP 變體 (如 127.0.0.0:8000、127.0.0.1:8000)
+                if entry_host in ("127.0.0.0", "127.0.0.1", "localhost", "0.0.0.0"):
+                    if origin_host in ("127.0.0.0", "127.0.0.1", "localhost", "0.0.0.0"):
+                        if entry_port is None or entry_port == origin_port:
+                            return True
+
         return False
 
     @app.before_request
@@ -75,14 +160,15 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             origin = request.headers.get("Origin")
             response = app.make_default_options_response()
             if is_allowed_origin(origin):
-                response.headers["Access-Control-Allow-Origin"] = origin
+                response.headers["Access-Control-Allow-Origin"] = origin.strip() if origin else "*"
                 response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
                 req_headers = request.headers.get("Access-Control-Request-Headers")
                 if req_headers:
                     response.headers["Access-Control-Allow-Headers"] = req_headers
                 else:
-                    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+                    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With, Accept"
                 response.headers["Access-Control-Allow-Credentials"] = "true"
+                response.headers["Access-Control-Max-Age"] = "86400"
             response.headers["Access-Control-Allow-Private-Network"] = "true"
             response.headers["Vary"] = "Origin"
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
@@ -92,14 +178,15 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     def add_cors_headers(response):
         origin = request.headers.get("Origin")
         if is_allowed_origin(origin):
-            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Origin"] = origin.strip() if origin else "*"
             response.headers["Access-Control-Allow-Credentials"] = "true"
             req_headers = request.headers.get("Access-Control-Request-Headers")
             if req_headers:
                 response.headers["Access-Control-Allow-Headers"] = req_headers
             else:
-                response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+                response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With, Accept"
             response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+            response.headers["Access-Control-Expose-Headers"] = "Content-Type, Authorization"
         response.headers["Access-Control-Allow-Private-Network"] = "true"
         vary = response.headers.get("Vary")
         if vary:
